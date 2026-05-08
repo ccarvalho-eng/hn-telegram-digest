@@ -24,3 +24,7 @@ hn_telegram_digest-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+# Local secrets and environment overrides.
+.env*
+!.env.example
