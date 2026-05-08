@@ -3,9 +3,9 @@ defmodule HnTelegramDigest.Workflows.HandleSubscriptionCommand do
 
   use SquidMesh.Workflow
 
-  alias HnTelegramDigest.Workflows.HandleSubscriptionCommand.Steps.ConfirmChange
-  alias HnTelegramDigest.Workflows.HandleSubscriptionCommand.Steps.ParseTelegramCommand
-  alias HnTelegramDigest.Workflows.HandleSubscriptionCommand.Steps.UpdatePreferences
+  alias HnTelegramDigest.Workflows.HandleSubscriptionCommand.ConfirmChange
+  alias HnTelegramDigest.Workflows.HandleSubscriptionCommand.ParseTelegramCommand
+  alias HnTelegramDigest.Workflows.HandleSubscriptionCommand.UpdatePreferences
 
   workflow do
     trigger :telegram_update do

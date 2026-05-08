@@ -1,4 +1,4 @@
-defmodule HnTelegramDigest.Workflows.HandleSubscriptionCommand.Steps.ParseTelegramCommand do
+defmodule HnTelegramDigest.Workflows.HandleSubscriptionCommand.ParseTelegramCommand do
   @moduledoc false
 
   use Jido.Action,

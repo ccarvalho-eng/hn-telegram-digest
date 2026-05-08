@@ -1,4 +1,4 @@
-defmodule HnTelegramDigest.Workflows.HandleSubscriptionCommand.Steps.UpdatePreferences do
+defmodule HnTelegramDigest.Workflows.HandleSubscriptionCommand.UpdatePreferences do
   @moduledoc false
 
   use Jido.Action,

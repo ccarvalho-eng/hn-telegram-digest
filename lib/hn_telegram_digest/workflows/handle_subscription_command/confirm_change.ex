@@ -1,4 +1,4 @@
-defmodule HnTelegramDigest.Workflows.HandleSubscriptionCommand.Steps.ConfirmChange do
+defmodule HnTelegramDigest.Workflows.HandleSubscriptionCommand.ConfirmChange do
   @moduledoc """
   Sends the Telegram confirmation produced by the subscription command workflow.
 
