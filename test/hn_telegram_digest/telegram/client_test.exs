@@ -8,4 +8,11 @@ defmodule HnTelegramDigest.Telegram.ClientTest do
       Client.get_updates("123:abc", base_url: "https://api.telegram.org:8443")
     end
   end
+
+  test "validates send message params before sending a request" do
+    assert {:error, {:missing_telegram_message_param, :text}} =
+             Client.send_message("123:abc", %{chat_id: 12_345},
+               base_url: "https://api.telegram.org"
+             )
+  end
 end

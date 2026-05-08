@@ -1,13 +1,41 @@
 defmodule HnTelegramDigest.Telegram.SubscriptionCommandWorkflowTest do
   use HnTelegramDigest.DataCase, async: false
 
+  import Mox
+
   alias HnTelegramDigest.Telegram.Chat
   alias HnTelegramDigest.Telegram.CommandUpdateHandler
   alias HnTelegramDigest.Telegram.Subscription
   alias HnTelegramDigest.Telegram.Subscriptions
+  alias HnTelegramDigest.TelegramClientMock
   alias HnTelegramDigest.Workflows.HandleSubscriptionCommand
 
-  test "/start launches a workflow that stores an active chat subscription" do
+  setup :set_mox_global
+  setup :verify_on_exit!
+
+  setup do
+    telegram_config = Application.fetch_env!(:hn_telegram_digest, :telegram)
+    delivery_agent = start_supervised!({Agent, fn -> [] end})
+
+    Application.put_env(
+      :hn_telegram_digest,
+      :telegram,
+      Keyword.merge(telegram_config,
+        bot_token: "123:abc",
+        client: TelegramClientMock
+      )
+    )
+
+    on_exit(fn ->
+      Application.put_env(:hn_telegram_digest, :telegram, telegram_config)
+    end)
+
+    {:ok, delivery_agent: delivery_agent}
+  end
+
+  test "/start launches a workflow that stores an active chat subscription", %{
+    delivery_agent: delivery_agent
+  } do
     update =
       telegram_update(701,
         text: "/start",
@@ -20,6 +48,15 @@ defmodule HnTelegramDigest.Telegram.SubscriptionCommandWorkflowTest do
         }
       )
 
+    expect(TelegramClientMock, :send_message, fn "123:abc", params, opts ->
+      assert %{chat_id: 12_345, text: "You are subscribed to Hacker News digests."} = params
+      assert "https://api.telegram.org" = Keyword.fetch!(opts, :base_url)
+
+      Agent.update(delivery_agent, &[Map.take(params, [:chat_id, :text]) | &1])
+
+      {:ok, %{"message_id" => 101}}
+    end)
+
     assert :ok = CommandUpdateHandler.handle_update(update)
 
     assert {:ok, [run]} = SquidMesh.list_runs([workflow: HandleSubscriptionCommand], repo: Repo)
@@ -29,7 +66,7 @@ defmodule HnTelegramDigest.Telegram.SubscriptionCommandWorkflowTest do
 
     refute Map.has_key?(run.payload, :update)
 
-    assert %{success: 2, failure: 0} = Oban.drain_queue(queue: :squid_mesh, with_recursion: true)
+    assert %{success: 3, failure: 0} = Oban.drain_queue(queue: :squid_mesh, with_recursion: true)
 
     assert %Chat{
              chat_id: 12_345,
@@ -45,9 +82,18 @@ defmodule HnTelegramDigest.Telegram.SubscriptionCommandWorkflowTest do
              subscribed_at: %DateTime{},
              unsubscribed_at: nil
            } = Repo.get_by!(Subscription, chat_id: 12_345)
+
+    assert [
+             %{
+               chat_id: 12_345,
+               text: "You are subscribed to Hacker News digests."
+             }
+           ] = delivered_messages(delivery_agent)
   end
 
-  test "/stop launches a workflow that stores an inactive chat subscription" do
+  test "/stop launches a workflow that stores an inactive chat subscription", %{
+    delivery_agent: delivery_agent
+  } do
     assert {:ok, %{status: "active"}} =
              Subscriptions.apply_subscription_command(%{
                action: "subscribe",
@@ -68,8 +114,17 @@ defmodule HnTelegramDigest.Telegram.SubscriptionCommandWorkflowTest do
         }
       )
 
+    expect(TelegramClientMock, :send_message, fn "123:abc", params, opts ->
+      assert %{chat_id: 98_765, text: "You are unsubscribed from Hacker News digests."} = params
+      assert "https://api.telegram.org" = Keyword.fetch!(opts, :base_url)
+
+      Agent.update(delivery_agent, &[Map.take(params, [:chat_id, :text]) | &1])
+
+      {:ok, %{"message_id" => 102}}
+    end)
+
     assert :ok = CommandUpdateHandler.handle_update(update)
-    assert %{success: 2, failure: 0} = Oban.drain_queue(queue: :squid_mesh, with_recursion: true)
+    assert %{success: 3, failure: 0} = Oban.drain_queue(queue: :squid_mesh, with_recursion: true)
 
     assert %Subscription{
              chat_id: 98_765,
@@ -77,19 +132,33 @@ defmodule HnTelegramDigest.Telegram.SubscriptionCommandWorkflowTest do
              subscribed_at: %DateTime{},
              unsubscribed_at: %DateTime{}
            } = Repo.get_by!(Subscription, chat_id: 98_765)
+
+    assert [
+             %{
+               chat_id: 98_765,
+               text: "You are unsubscribed from Hacker News digests."
+             }
+           ] = delivered_messages(delivery_agent)
   end
 
   test "duplicate /start deliveries keep one active subscription" do
     update = telegram_update(704, text: "/start")
 
+    expect(TelegramClientMock, :send_message, 2, fn "123:abc", params, opts ->
+      assert %{chat_id: 12_345, text: "You are subscribed to Hacker News digests."} = params
+      assert "https://api.telegram.org" = Keyword.fetch!(opts, :base_url)
+
+      {:ok, %{"message_id" => System.unique_integer([:positive])}}
+    end)
+
     assert :ok = CommandUpdateHandler.handle_update(update)
-    assert %{success: 2, failure: 0} = Oban.drain_queue(queue: :squid_mesh, with_recursion: true)
+    assert %{success: 3, failure: 0} = Oban.drain_queue(queue: :squid_mesh, with_recursion: true)
 
     assert %Subscription{subscribed_at: subscribed_at} =
              Repo.get_by!(Subscription, chat_id: 12_345)
 
     assert :ok = CommandUpdateHandler.handle_update(update)
-    assert %{success: 2, failure: 0} = Oban.drain_queue(queue: :squid_mesh, with_recursion: true)
+    assert %{success: 3, failure: 0} = Oban.drain_queue(queue: :squid_mesh, with_recursion: true)
 
     assert %DateTime{} = subscribed_at
 
@@ -127,5 +196,9 @@ defmodule HnTelegramDigest.Telegram.SubscriptionCommandWorkflowTest do
         "chat" => chat
       }
     }
+  end
+
+  defp delivered_messages(delivery_agent) do
+    Agent.get(delivery_agent, &Enum.reverse/1)
   end
 end

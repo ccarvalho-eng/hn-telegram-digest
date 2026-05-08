@@ -3,6 +3,7 @@ defmodule HnTelegramDigest.Workflows.HandleSubscriptionCommand do
 
   use SquidMesh.Workflow
 
+  alias HnTelegramDigest.Workflows.HandleSubscriptionCommand.Steps.ConfirmChange
   alias HnTelegramDigest.Workflows.HandleSubscriptionCommand.Steps.ParseTelegramCommand
   alias HnTelegramDigest.Workflows.HandleSubscriptionCommand.Steps.UpdatePreferences
 
@@ -25,7 +26,13 @@ defmodule HnTelegramDigest.Workflows.HandleSubscriptionCommand do
       output: :subscription_change
     )
 
+    step(:confirm_change, ConfirmChange,
+      input: [:subscription_change],
+      output: :confirmation_delivery
+    )
+
     transition(:parse_command, on: :ok, to: :update_preferences)
-    transition(:update_preferences, on: :ok, to: :complete)
+    transition(:update_preferences, on: :ok, to: :confirm_change)
+    transition(:confirm_change, on: :ok, to: :complete)
   end
 end

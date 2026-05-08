@@ -10,10 +10,13 @@ defmodule HnTelegramDigest.Telegram.PollerTest do
   defmodule StaticClient do
     @behaviour HnTelegramDigest.Telegram.Client
 
-    @impl true
+    @impl HnTelegramDigest.Telegram.Client
     def get_updates(_token, _opts) do
       {:ok, [%{"update_id" => 500, "message" => %{"text" => "/start"}}]}
     end
+
+    @impl HnTelegramDigest.Telegram.Client
+    def send_message(_token, _params, _opts), do: {:ok, %{}}
   end
 
   defmodule ReclaimingHandler do
