@@ -6,6 +6,7 @@ defmodule HnTelegramDigest.MixProject do
       app: :hn_telegram_digest,
       version: "0.1.0",
       elixir: "~> 1.17",
+      aliases: aliases(),
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
@@ -22,8 +23,18 @@ defmodule HnTelegramDigest.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      # {:dep_from_hexpm, "~> 0.3.0"},
-      # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
+      {:ecto_sql, "~> 3.13"},
+      {:oban, "~> 2.21"},
+      {:postgrex, "~> 0.20"},
+      {:squid_mesh, "~> 0.1.0-alpha.3"}
+    ]
+  end
+
+  defp aliases do
+    [
+      setup: ["deps.get", "ecto.setup"],
+      "ecto.setup": ["ecto.create", "ecto.migrate"],
+      "ecto.reset": ["ecto.drop", "ecto.setup"]
     ]
   end
 end
