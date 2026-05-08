@@ -11,4 +11,17 @@ config :squid_mesh,
     stale_step_timeout: :timer.minutes(5)
   ]
 
+config :hn_telegram_digest, :telegram,
+  api_base_url: "https://api.telegram.org",
+  bot_token: nil,
+  update_handler: HnTelegramDigest.Telegram.NoopUpdateHandler,
+  polling: [
+    enabled: false,
+    timeout_seconds: 30,
+    limit: 100,
+    allowed_updates: ["message"],
+    processing_timeout_ms: :timer.minutes(5),
+    error_backoff_ms: :timer.seconds(5)
+  ]
+
 import_config "#{config_env()}.exs"

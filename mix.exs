@@ -6,6 +6,7 @@ defmodule HnTelegramDigest.MixProject do
       app: :hn_telegram_digest,
       version: "0.1.0",
       elixir: "~> 1.17",
+      elixirc_paths: elixirc_paths(Mix.env()),
       aliases: aliases(),
       start_permanent: Mix.env() == :prod,
       deps: deps()
@@ -26,9 +27,13 @@ defmodule HnTelegramDigest.MixProject do
       {:ecto_sql, "~> 3.13"},
       {:oban, "~> 2.21"},
       {:postgrex, "~> 0.20"},
+      {:req, "~> 0.5"},
       {:squid_mesh, "~> 0.1.0-alpha.3"}
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_env), do: ["lib"]
 
   defp aliases do
     [

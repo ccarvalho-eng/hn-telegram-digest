@@ -1,5 +1,14 @@
 import Config
 
+telegram_polling_enabled? =
+  System.get_env("TELEGRAM_POLLING_ENABLED", "false") in ["1", "true", "TRUE"]
+
+config :hn_telegram_digest, :telegram,
+  bot_token: System.get_env("TELEGRAM_BOT_TOKEN"),
+  polling: [
+    enabled: telegram_polling_enabled?
+  ]
+
 if config_env() == :prod do
   database_url = System.fetch_env!("DATABASE_URL")
   pool_size = String.to_integer(System.get_env("POOL_SIZE") || "10")
