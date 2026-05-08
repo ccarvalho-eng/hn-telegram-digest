@@ -19,104 +19,125 @@ Digest generation is a later slice. For now, verify integration by sending
 `/start` or `/stop` to the bot, checking that Telegram receives the confirmation
 reply, and checking the database rows described below.
 
-## Create A Telegram Bot
+## Test With Your Own Telegram Bot
 
-1. Open Telegram and message `@BotFather`.
-2. Send `/newbot`.
-3. Follow BotFather's prompts for the display name and username.
-4. Copy the bot token into a local environment file. Do not commit it.
-5. Optional: send `/setcommands` to BotFather and configure:
+Follow these steps to run the app locally against a real Telegram bot you own.
+
+1. Create the bot in Telegram.
+
+   Open Telegram, message `@BotFather`, send `/newbot`, and follow the prompts
+   for the display name and username. BotFather will return a bot token.
+
+2. Configure the bot commands.
+
+   In the same BotFather chat, send `/setcommands`, select your bot, and enter:
 
    ```text
    start - Subscribe to Hacker News digests
    stop - Stop Hacker News digests
    ```
 
-This app uses polling in dev. If the bot was previously configured with a
-webhook, remove it before using polling:
+3. Create a local env file.
 
-```sh
-curl -sS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/deleteWebhook"
-```
+   ```sh
+   cp .env.example .env.local
+   ```
 
-## Local Environment
+4. Add your token and enable polling.
 
-Create a local env file from the example:
+   Edit `.env.local`:
 
-```sh
-cp .env.example .env.local
-```
+   ```sh
+   TELEGRAM_BOT_TOKEN=replace-with-your-bot-token
+   TELEGRAM_POLLING_ENABLED=true
+   ```
 
-Fill in the Telegram token:
+   Do not commit `.env.local` or paste the real token into committed files.
 
-```sh
-TELEGRAM_BOT_TOKEN=replace-with-bot-token
-TELEGRAM_POLLING_ENABLED=true
-```
+5. Load the env file in your shell.
 
-`.env.local` is ignored by git. Load it before running Mix commands that should
-talk to Telegram:
+   ```sh
+   set -a
+   source .env.local
+   set +a
+   ```
 
-```sh
-set -a
-source .env.local
-set +a
-```
+6. Remove any webhook from the bot.
 
-## Database Setup
+   The dev app uses polling with `getUpdates`. If the bot has a webhook,
+   Telegram will not deliver updates to polling until the webhook is removed.
 
-The app expects Postgres to be reachable with the values from `config/dev.exs`.
-The defaults are:
+   ```sh
+   curl -sS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/deleteWebhook"
+   ```
 
-```text
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_HOST=localhost
-POSTGRES_DB=hn_telegram_digest_dev
-```
+7. Create and migrate the database.
 
-Create and migrate the database:
+   The app expects Postgres to be reachable with the values from
+   `config/dev.exs`. The defaults are:
 
-```sh
-mix setup
-```
+   ```text
+   POSTGRES_USER=postgres
+   POSTGRES_PASSWORD=postgres
+   POSTGRES_HOST=localhost
+   POSTGRES_DB=hn_telegram_digest_dev
+   ```
 
-If the database already exists, just run:
+   For a fresh database:
 
-```sh
-mix ecto.migrate
-```
+   ```sh
+   mix setup
+   ```
 
-## Run The Bot In Dev
+   If the database already exists:
 
-Start the OTP app with polling enabled:
+   ```sh
+   mix ecto.migrate
+   ```
 
-```sh
-mix run --no-halt
-```
+8. Start the OTP app.
 
-Send `/start` to the bot in Telegram. The poller should persist the update,
-start the subscription workflow, store the chat subscription as active, and send
-a confirmation reply.
+   ```sh
+   mix run --no-halt
+   ```
 
-Check the database:
+9. Send `/start` to your bot in Telegram.
 
-```sh
-psql "$DATABASE_URL" -c "select chat_id, type, username from telegram_chats;"
-psql "$DATABASE_URL" -c "select chat_id, status, subscribed_at, unsubscribed_at from telegram_subscriptions;"
-psql "$DATABASE_URL" -c "select idempotency_key, chat_id, status, sent_at from telegram_message_deliveries;"
-```
+   The app should poll Telegram, persist the update, start the subscription
+   workflow, store the chat subscription as active, and send this confirmation:
 
-If you are using the default local Postgres settings instead of `DATABASE_URL`,
-connect to `hn_telegram_digest_dev` directly:
+   ```text
+   You are subscribed to Hacker News digests.
+   ```
 
-```sh
-psql -d hn_telegram_digest_dev -c "select chat_id, status, subscribed_at, unsubscribed_at from telegram_subscriptions;"
-psql -d hn_telegram_digest_dev -c "select idempotency_key, chat_id, status, sent_at from telegram_message_deliveries;"
-```
+10. Inspect the database from another terminal.
 
-Send `/stop` to the bot and rerun the subscription query. The row should move to
-`inactive`, set `unsubscribed_at`, and produce an unsubscribe confirmation.
+    If you use `DATABASE_URL`:
+
+    ```sh
+    psql "$DATABASE_URL" -c "select chat_id, type, username from telegram_chats;"
+    psql "$DATABASE_URL" -c "select chat_id, status, subscribed_at, unsubscribed_at from telegram_subscriptions;"
+    psql "$DATABASE_URL" -c "select idempotency_key, chat_id, status, sent_at from telegram_message_deliveries;"
+    ```
+
+    With the default local database:
+
+    ```sh
+    psql -d hn_telegram_digest_dev -c "select chat_id, type, username from telegram_chats;"
+    psql -d hn_telegram_digest_dev -c "select chat_id, status, subscribed_at, unsubscribed_at from telegram_subscriptions;"
+    psql -d hn_telegram_digest_dev -c "select idempotency_key, chat_id, status, sent_at from telegram_message_deliveries;"
+    ```
+
+11. Send `/stop` to your bot.
+
+    Telegram should receive:
+
+    ```text
+    You are unsubscribed from Hacker News digests.
+    ```
+
+    Rerun the subscription query. The row should move to `inactive` and set
+    `unsubscribed_at`.
 
 ## Tests
 
