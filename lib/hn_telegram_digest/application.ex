@@ -8,12 +8,10 @@ defmodule HnTelegramDigest.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      # Starts a worker by calling: HnTelegramDigest.Worker.start_link(arg)
-      # {HnTelegramDigest.Worker, arg}
+      HnTelegramDigest.Repo,
+      {Oban, Application.fetch_env!(:hn_telegram_digest, Oban)}
     ]
 
-    # See https://hexdocs.pm/elixir/Supervisor.html
-    # for other strategies and supported options
     opts = [strategy: :one_for_one, name: HnTelegramDigest.Supervisor]
     Supervisor.start_link(children, opts)
   end
