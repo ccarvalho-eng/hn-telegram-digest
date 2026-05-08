@@ -3,6 +3,12 @@ import Config
 config :hn_telegram_digest,
   ecto_repos: [HnTelegramDigest.Repo]
 
+config :hn_telegram_digest, :hacker_news,
+  client: HnTelegramDigest.HackerNews.Client,
+  feed_url: "https://news.ycombinator.com/rss",
+  max_body_bytes: 1_000_000,
+  receive_timeout: :timer.seconds(10)
+
 config :squid_mesh,
   repo: HnTelegramDigest.Repo,
   execution: [
