@@ -10,14 +10,16 @@ The app can currently run the Telegram ingestion and subscription-command
 workflow in dev:
 
 - Poll Telegram with `getUpdates`.
+- Fetch and parse Hacker News front-page RSS items.
 - Persist received Telegram updates.
 - Start a Squid Mesh workflow for `/start` and `/stop`.
 - Persist Telegram chats and subscription status.
 - Send and record Telegram confirmation messages.
 
-Digest generation is a later slice. For now, verify integration by sending
-`/start` or `/stop` to the bot, checking that Telegram receives the confirmation
-reply, and checking the database rows described below.
+Digest generation and scheduled delivery are later slices. For now, verify
+Telegram integration by sending `/start` or `/stop` to the bot, checking that
+Telegram receives the confirmation reply, and checking the database rows
+described below.
 
 ## Test With Your Own Telegram Bot
 
@@ -149,6 +151,7 @@ mix test
 
 The workflow tests cover:
 
+- Hacker News RSS fetching and parsing into workflow-safe feed item maps.
 - `/start` creates or updates an active subscription.
 - `/stop` marks an existing subscription inactive.
 - duplicate command delivery is idempotent at the subscription row.
