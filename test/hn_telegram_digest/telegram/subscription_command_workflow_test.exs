@@ -1,0 +1,131 @@
+defmodule HnTelegramDigest.Telegram.SubscriptionCommandWorkflowTest do
+  use HnTelegramDigest.DataCase, async: false
+
+  alias HnTelegramDigest.Telegram.Chat
+  alias HnTelegramDigest.Telegram.CommandUpdateHandler
+  alias HnTelegramDigest.Telegram.Subscription
+  alias HnTelegramDigest.Telegram.Subscriptions
+  alias HnTelegramDigest.Workflows.HandleSubscriptionCommand
+
+  test "/start launches a workflow that stores an active chat subscription" do
+    update =
+      telegram_update(701,
+        text: "/start",
+        chat: %{
+          "id" => 12_345,
+          "type" => "private",
+          "username" => "hn_reader",
+          "first_name" => "Hn",
+          "last_name" => "Reader"
+        }
+      )
+
+    assert :ok = CommandUpdateHandler.handle_update(update)
+
+    assert {:ok, [run]} = SquidMesh.list_runs([workflow: HandleSubscriptionCommand], repo: Repo)
+
+    assert %{subscription_command: %{"action" => "subscribe", "chat" => %{"id" => 12_345}}} =
+             run.payload
+
+    refute Map.has_key?(run.payload, :update)
+
+    assert %{success: 2, failure: 0} = Oban.drain_queue(queue: :squid_mesh, with_recursion: true)
+
+    assert %Chat{
+             chat_id: 12_345,
+             type: "private",
+             username: "hn_reader",
+             first_name: "Hn",
+             last_name: "Reader"
+           } = Repo.get!(Chat, 12_345)
+
+    assert %Subscription{
+             chat_id: 12_345,
+             status: "active",
+             subscribed_at: %DateTime{},
+             unsubscribed_at: nil
+           } = Repo.get_by!(Subscription, chat_id: 12_345)
+  end
+
+  test "/stop launches a workflow that stores an inactive chat subscription" do
+    assert {:ok, %{status: "active"}} =
+             Subscriptions.apply_subscription_command(%{
+               action: "subscribe",
+               chat: %{
+                 id: 98_765,
+                 type: "private",
+                 username: "past_reader"
+               }
+             })
+
+    update =
+      telegram_update(702,
+        text: "/stop",
+        chat: %{
+          "id" => 98_765,
+          "type" => "private",
+          "username" => "past_reader"
+        }
+      )
+
+    assert :ok = CommandUpdateHandler.handle_update(update)
+    assert %{success: 2, failure: 0} = Oban.drain_queue(queue: :squid_mesh, with_recursion: true)
+
+    assert %Subscription{
+             chat_id: 98_765,
+             status: "inactive",
+             subscribed_at: %DateTime{},
+             unsubscribed_at: %DateTime{}
+           } = Repo.get_by!(Subscription, chat_id: 98_765)
+  end
+
+  test "duplicate /start deliveries keep one active subscription" do
+    update = telegram_update(704, text: "/start")
+
+    assert :ok = CommandUpdateHandler.handle_update(update)
+    assert %{success: 2, failure: 0} = Oban.drain_queue(queue: :squid_mesh, with_recursion: true)
+
+    assert %Subscription{subscribed_at: subscribed_at} =
+             Repo.get_by!(Subscription, chat_id: 12_345)
+
+    assert :ok = CommandUpdateHandler.handle_update(update)
+    assert %{success: 2, failure: 0} = Oban.drain_queue(queue: :squid_mesh, with_recursion: true)
+
+    assert %DateTime{} = subscribed_at
+
+    assert [
+             %Subscription{
+               chat_id: 12_345,
+               status: "active",
+               subscribed_at: ^subscribed_at,
+               unsubscribed_at: nil
+             }
+           ] = Repo.all(Subscription)
+  end
+
+  test "non-command messages do not start workflow work" do
+    update = telegram_update(703, text: "hello")
+
+    assert :ok = CommandUpdateHandler.handle_update(update)
+    assert %{success: 0, failure: 0} = Oban.drain_queue(queue: :squid_mesh)
+    assert [] = Repo.all(Chat)
+    assert [] = Repo.all(Subscription)
+  end
+
+  defp telegram_update(update_id, opts) do
+    chat =
+      Keyword.get(opts, :chat, %{
+        "id" => 12_345,
+        "type" => "private"
+      })
+
+    %{
+      "update_id" => update_id,
+      "message" => %{
+        "message_id" => update_id + 1,
+        "text" => Keyword.fetch!(opts, :text),
+        "chat" => chat
+      }
+    }
+  end
+end
