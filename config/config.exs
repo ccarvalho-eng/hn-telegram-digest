@@ -14,6 +14,8 @@ config :squid_mesh,
 config :hn_telegram_digest, :telegram,
   api_base_url: "https://api.telegram.org",
   bot_token: nil,
+  client: HnTelegramDigest.Telegram.Client,
+  delivery_timeout_ms: :timer.minutes(5),
   update_handler: HnTelegramDigest.Telegram.CommandUpdateHandler,
   polling: [
     enabled: false,

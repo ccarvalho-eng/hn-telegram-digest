@@ -25,6 +25,7 @@ defmodule HnTelegramDigest.MixProject do
   defp deps do
     [
       {:ecto_sql, "~> 3.13"},
+      {:mox, "~> 1.2", only: :test},
       {:oban, "~> 2.21"},
       {:postgrex, "~> 0.20"},
       {:req, "~> 0.5"},
