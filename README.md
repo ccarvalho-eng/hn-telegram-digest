@@ -12,6 +12,7 @@ workflow in dev:
 - Poll Telegram with `getUpdates`.
 - Fetch and parse Hacker News front-page RSS items.
 - Deduplicate Hacker News items per Telegram chat.
+- Format deduplicated Hacker News items into deterministic Telegram text.
 - Persist received Telegram updates.
 - Start a Squid Mesh workflow for `/start` and `/stop`.
 - Persist Telegram chats and subscription status.
@@ -154,6 +155,8 @@ The workflow tests cover:
 
 - Hacker News RSS fetching and parsing into workflow-safe feed item maps.
 - per-chat Hacker News item deduplication with replay-safe workflow retries.
+- deterministic Telegram digest formatting, including empty digests and long
+  item text.
 - `/start` creates or updates an active subscription.
 - `/stop` marks an existing subscription inactive.
 - duplicate command delivery is idempotent at the subscription row.
@@ -172,6 +175,9 @@ The workflow tests cover:
 - Hacker News deduplication is stored in `hacker_news_seen_items`. Items are
   reserved by chat and workflow run so a retry of the same run returns the same
   new items, while later runs treat those items as duplicates.
+- Digest formatting is side-effect free and emits plain Telegram text without a
+  parse mode. Long messages are capped to Telegram's text limit with explicit
+  omitted-item metadata.
 - Outbound confirmations are durable through `telegram_message_deliveries`.
   Successful duplicate step attempts skip the Telegram API call; failed sends
   are recorded for retry. Stale in-flight sends move to `unknown` for operator
