@@ -6,8 +6,8 @@ polling, and durable workflow state.
 
 ## Current Dev Path
 
-The app can currently run the Telegram ingestion and subscription-command
-workflow in dev:
+The app can currently run Telegram ingestion, subscription commands, and manual
+digest requests in dev:
 
 - Poll Telegram with `getUpdates`.
 - Fetch and parse Hacker News front-page RSS items.
@@ -15,14 +15,16 @@ workflow in dev:
 - Format deduplicated Hacker News items into deterministic Telegram text.
 - Persist received Telegram updates.
 - Start a Squid Mesh workflow for `/start` and `/stop`.
+- Start a Hacker News digest workflow for `/digest` from active subscriptions.
+- Send deterministic Telegram replies for unsupported commands.
 - Start a Squid Mesh cron workflow that fans out digest workflow runs for
   active subscriptions.
 - Persist Telegram chats and subscription status.
 - Send and record Telegram confirmation messages.
 
-Verify Telegram integration by sending `/start` or `/stop` to the bot, checking
-that Telegram receives the confirmation reply, and checking the database rows
-described below.
+Verify Telegram integration by sending `/start`, `/digest`, or `/stop` to the
+bot, checking that Telegram receives the expected reply or digest, and checking
+the database rows described below.
 
 ## Test With Your Own Telegram Bot
 
@@ -40,6 +42,7 @@ Follow these steps to run the app locally against a real Telegram bot you own.
    ```text
    start - Subscribe to Hacker News digests
    stop - Stop Hacker News digests
+   digest - Send a Hacker News digest now
    ```
 
 3. Create a local env file.
@@ -144,6 +147,15 @@ Follow these steps to run the app locally against a real Telegram bot you own.
     Rerun the subscription query. The row should move to `inactive` and set
     `unsubscribed_at`.
 
+12. Send `/digest` to your bot.
+
+    Active subscriptions should start a digest workflow and receive a digest if
+    there are new Hacker News items. Inactive or unknown chats should receive:
+
+    ```text
+    Subscribe with /start before requesting a Hacker News digest.
+    ```
+
 ## Trigger The Schedule Locally
 
 The daily schedule is declared as a Squid Mesh cron trigger in
@@ -162,9 +174,14 @@ SquidMesh.start_run(HnTelegramDigest.Workflows.ScheduleHnDigests, :daily_digest_
 ```
 
 That scheduler workflow queries active subscriptions and starts one
-`HnTelegramDigest.Workflows.DeliverHnDigest` run per active chat. Automated
-tests keep API boundaries mocked or unexecuted; real Hacker News and Telegram
-calls are reserved for explicit smoke testing.
+`HnTelegramDigest.Workflows.DeliverHnDigest` run per active chat. The same
+digest workflow is used for manual `/digest` requests. Squid Mesh currently
+allows only one trigger per workflow, so the host app uses one shared
+`:digest_requested` trigger and tracks the missing multi-trigger support as a
+runtime finding below.
+
+Automated tests keep API boundaries mocked or unexecuted; real Hacker News and
+Telegram calls are reserved for explicit smoke testing.
 
 ## Tests
 
@@ -182,6 +199,9 @@ The workflow tests cover:
   item text.
 - `/start` creates or updates an active subscription.
 - `/stop` marks an existing subscription inactive.
+- `/digest` starts a digest workflow for active subscriptions.
+- inactive `/digest` and unsupported commands send deterministic Telegram
+  replies without starting workflow work.
 - duplicate command delivery is idempotent at the subscription row.
 - confirmation delivery is persisted and retry-safe by idempotency key.
 - non-command messages do not start workflow work.
@@ -210,6 +230,12 @@ The workflow tests cover:
   active subscriptions and starts digest workflow runs through Squid Mesh.
   Duplicate scheduled-start semantics are left to Squid Mesh and tracked as a
   runtime finding below.
+- Manual `/digest` requests reuse the same digest workflow as scheduled fanout.
+  Because Squid Mesh currently supports exactly one trigger per workflow, both
+  entrypoints share the `:digest_requested` trigger instead of modeling separate
+  `:scheduled_digest` and `:manual_digest` triggers.
+- The digest send step re-checks the subscription before calling Telegram, so
+  stale queued digest runs skip delivery after a chat unsubscribes.
 
 ## Squid Mesh Findings
 
@@ -229,3 +255,8 @@ The workflow tests cover:
   stays visible: duplicate cron delivery can create duplicate digest workflow
   runs, even though downstream domain deduplication still protects story
   delivery.
+- [Squid Mesh #147](https://github.com/ccarvalho-eng/squid_mesh/issues/147):
+  Squid Mesh currently validates that each workflow has exactly one trigger.
+  This app needed scheduled and manual entrypoints for the same digest workflow,
+  so it uses one shared `:digest_requested` trigger and records the missing
+  first-class multi-trigger support upstream.

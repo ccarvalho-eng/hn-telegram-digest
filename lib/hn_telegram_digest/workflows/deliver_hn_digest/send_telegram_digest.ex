@@ -14,6 +14,7 @@ defmodule HnTelegramDigest.Workflows.DeliverHnDigest.SendTelegramDigest do
     ]
 
   alias HnTelegramDigest.Telegram.MessageDeliveries
+  alias HnTelegramDigest.Telegram.Subscriptions
 
   @spec run(map(), map()) :: {:ok, map()} | {:error, term()}
   @impl Jido.Action
@@ -24,10 +25,15 @@ defmodule HnTelegramDigest.Workflows.DeliverHnDigest.SendTelegramDigest do
          {:ok, chat_id} <- fetch_integer(digest, :chat_id),
          {:ok, empty?} <- fetch_boolean(digest, :empty),
          {:ok, text} <- fetch_non_empty_binary(digest, :text) do
-      if empty? do
-        {:ok, skipped_result(chat_id, idempotency_key)}
-      else
-        deliver_digest(chat_id, text, idempotency_key)
+      cond do
+        not Subscriptions.active?(chat_id) ->
+          {:ok, inactive_subscription_result(chat_id, empty?, idempotency_key)}
+
+        empty? ->
+          {:ok, skipped_result(chat_id, idempotency_key)}
+
+        true ->
+          deliver_digest(chat_id, text, idempotency_key)
       end
     end
   end
@@ -65,6 +71,17 @@ defmodule HnTelegramDigest.Workflows.DeliverHnDigest.SendTelegramDigest do
       duplicate?: false,
       chat_id: chat_id,
       empty: true,
+      idempotency_key: idempotency_key
+    }
+  end
+
+  defp inactive_subscription_result(chat_id, empty?, idempotency_key) do
+    %{
+      status: "skipped",
+      reason: "inactive_subscription",
+      duplicate?: false,
+      chat_id: chat_id,
+      empty: empty?,
       idempotency_key: idempotency_key
     }
   end

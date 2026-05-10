@@ -5,9 +5,11 @@ defmodule HnTelegramDigest.Telegram.SubscriptionCommandWorkflowTest do
 
   alias HnTelegramDigest.Telegram.Chat
   alias HnTelegramDigest.Telegram.CommandUpdateHandler
+  alias HnTelegramDigest.Telegram.MessageDelivery
   alias HnTelegramDigest.Telegram.Subscription
   alias HnTelegramDigest.Telegram.Subscriptions
   alias HnTelegramDigest.TelegramClientMock
+  alias HnTelegramDigest.Workflows.DeliverHnDigest
   alias HnTelegramDigest.Workflows.HandleSubscriptionCommand
 
   setup :set_mox_global
@@ -170,6 +172,106 @@ defmodule HnTelegramDigest.Telegram.SubscriptionCommandWorkflowTest do
                unsubscribed_at: nil
              }
            ] = Repo.all(Subscription)
+  end
+
+  test "/digest launches a digest workflow for an active subscription" do
+    assert {:ok, %{status: "active"}} =
+             Subscriptions.apply_subscription_command(%{
+               action: "subscribe",
+               chat: %{
+                 id: 12_345,
+                 type: "private"
+               }
+             })
+
+    update = telegram_update(705, text: "/digest")
+
+    assert :ok = CommandUpdateHandler.handle_update(update)
+
+    assert {:ok, [run]} = SquidMesh.list_runs([workflow: DeliverHnDigest], repo: Repo)
+    assert :digest_requested = run.trigger
+    assert %{chat_id: 12_345, window_start_at: window_start_at} = run.payload
+    assert {:ok, _datetime, 0} = DateTime.from_iso8601(window_start_at)
+  end
+
+  test "/digest for an inactive chat sends a safe prompt without starting a digest", %{
+    delivery_agent: delivery_agent
+  } do
+    update = telegram_update(706, text: "/digest")
+
+    expect(TelegramClientMock, :send_message, fn "123:abc", params, opts ->
+      assert %{
+               chat_id: 12_345,
+               text: "Subscribe with /start before requesting a Hacker News digest."
+             } = params
+
+      assert "https://api.telegram.org" = Keyword.fetch!(opts, :base_url)
+
+      Agent.update(delivery_agent, &[Map.take(params, [:chat_id, :text]) | &1])
+
+      {:ok, %{"message_id" => 106}}
+    end)
+
+    assert :ok = CommandUpdateHandler.handle_update(update)
+
+    assert {:ok, []} = SquidMesh.list_runs([workflow: DeliverHnDigest], repo: Repo)
+
+    assert %MessageDelivery{
+             idempotency_key: "telegram_update/706/digest_inactive_subscription",
+             status: "sent"
+           } =
+             Repo.get_by!(MessageDelivery,
+               idempotency_key: "telegram_update/706/digest_inactive_subscription"
+             )
+
+    assert [
+             %{
+               chat_id: 12_345,
+               text: "Subscribe with /start before requesting a Hacker News digest."
+             }
+           ] = delivered_messages(delivery_agent)
+  end
+
+  test "unsupported slash commands send a deterministic response without starting workflow work",
+       %{
+         delivery_agent: delivery_agent
+       } do
+    update = telegram_update(707, text: "/startnow")
+
+    expect(TelegramClientMock, :send_message, fn "123:abc", params, opts ->
+      assert %{
+               chat_id: 12_345,
+               text:
+                 "That command is not supported yet. Available commands: /start, /stop, /digest."
+             } = params
+
+      assert "https://api.telegram.org" = Keyword.fetch!(opts, :base_url)
+
+      Agent.update(delivery_agent, &[Map.take(params, [:chat_id, :text]) | &1])
+
+      {:ok, %{"message_id" => 107}}
+    end)
+
+    assert :ok = CommandUpdateHandler.handle_update(update)
+    assert %{success: 0, failure: 0} = Oban.drain_queue(queue: :squid_mesh)
+    assert [] = Repo.all(Chat)
+    assert [] = Repo.all(Subscription)
+
+    assert %MessageDelivery{
+             idempotency_key: "telegram_update/707/unsupported_command",
+             status: "sent"
+           } =
+             Repo.get_by!(MessageDelivery,
+               idempotency_key: "telegram_update/707/unsupported_command"
+             )
+
+    assert [
+             %{
+               chat_id: 12_345,
+               text:
+                 "That command is not supported yet. Available commands: /start, /stop, /digest."
+             }
+           ] = delivered_messages(delivery_agent)
   end
 
   test "non-command messages do not start workflow work" do
