@@ -325,8 +325,8 @@ The workflow tests cover:
   have accepted the message.
 - Scheduled digest fanout intentionally stays thin in the host app: it queries
   active subscriptions and starts digest workflow runs through Squid Mesh.
-  Duplicate scheduled-start semantics are left to Squid Mesh and tracked as a
-  runtime finding below.
+  Dynamic parent/child run modeling and duplicate scheduled-start semantics are
+  left to Squid Mesh and tracked as runtime findings below.
 - Manual `/digest` requests reuse the same digest workflow as scheduled fanout.
   Because Squid Mesh currently supports exactly one trigger per workflow, both
   entrypoints share the `:digest_requested` trigger instead of modeling separate
@@ -344,6 +344,11 @@ The workflow tests cover:
   trigger, and manual/resume schema. For host apps, one cohesive generated
   migration, or fewer clearly grouped migrations, would be easier to review and
   apply.
+- [Squid Mesh #141](https://github.com/ccarvalho-eng/squid_mesh/issues/141):
+  Scheduled digest fanout has a runtime-sized graph: one digest run per active
+  subscription. This app keeps subscription lookup in host code, but child run
+  relationships, cancellation/replay semantics, and inspection of dynamic
+  subflows belong in Squid Mesh.
 - [Squid Mesh #146](https://github.com/ccarvalho-eng/squid_mesh/issues/146):
   Squid Mesh cron triggers do not expose the intended schedule window to the
   workflow payload. This app currently derives the window inside the scheduler
@@ -365,3 +370,20 @@ The workflow tests cover:
   current published Hex release. The host app exposes a placeholder
   `mix hn_telegram_digest.explain_run RUN_ID` task that reports this release gap
   instead of re-implementing explanation logic locally.
+- [Squid Mesh #149](https://github.com/ccarvalho-eng/squid_mesh/issues/149):
+  Public run-id APIs should return structured errors for malformed IDs instead
+  of leaking Ecto cast exceptions. This app validates CLI `RUN_ID` input at the
+  host boundary, but Squid Mesh should still harden `inspect_run/2`,
+  `explain_run/2`, and lifecycle APIs that accept persisted run IDs.
+
+Reviewed as host-owned, not Squid Mesh issues:
+
+- Telegram delivery rows, idempotency keys, stale in-flight recovery, and
+  `unknown` delivery status are host-owned external side-effect semantics.
+  Squid Mesh provides workflow retries and run context; it cannot know whether
+  Telegram accepted a message after a process crash.
+- Hacker News item deduplication is product-domain state keyed by chat and item.
+  Squid Mesh should not own feed-specific duplicate rules.
+- Operator CLI rendering and redaction are host presentation concerns. Squid
+  Mesh should expose structured diagnostic data and stable error shapes; the
+  host app decides how to format that data for operators.
