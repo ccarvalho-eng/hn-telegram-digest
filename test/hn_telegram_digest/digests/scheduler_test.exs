@@ -62,6 +62,8 @@ defmodule HnTelegramDigest.Digests.SchedulerTest do
 
     assert {:ok, [run]} = SquidMesh.list_runs([workflow: DeliverHnDigest], repo: Repo)
 
+    assert :digest_requested = run.trigger
+
     assert %{
              chat_id: 12_345,
              window_start_at: @window_start_at
@@ -94,6 +96,7 @@ defmodule HnTelegramDigest.Digests.SchedulerTest do
     assert :completed = schedule_run.status
 
     assert {:ok, [digest_run]} = SquidMesh.list_runs([workflow: DeliverHnDigest], repo: Repo)
+    assert :digest_requested = digest_run.trigger
     assert %{chat_id: 12_345, window_start_at: window_start_at} = digest_run.payload
     assert {:ok, _datetime, 0} = DateTime.from_iso8601(window_start_at)
   end

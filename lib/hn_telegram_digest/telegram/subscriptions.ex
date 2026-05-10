@@ -51,6 +51,21 @@ defmodule HnTelegramDigest.Telegram.Subscriptions do
     |> repo.all()
   end
 
+  @doc """
+  Returns whether a Telegram chat currently has an active subscription.
+  """
+  @spec active?(integer(), module()) :: boolean()
+  def active?(chat_id, repo \\ Repo)
+
+  def active?(chat_id, repo) when is_integer(chat_id) do
+    Subscription
+    |> where([subscription], subscription.chat_id == ^chat_id)
+    |> where([subscription], subscription.status == "active")
+    |> repo.exists?()
+  end
+
+  def active?(_chat_id, _repo), do: false
+
   defp fetch_action(command) do
     case value(command, :action) do
       action when action in ["subscribe", "unsubscribe"] -> {:ok, action}

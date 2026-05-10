@@ -4,6 +4,7 @@ defmodule HnTelegramDigest.Workflows.DeliverHnDigest.SendTelegramDigestTest do
   import Mox
 
   alias HnTelegramDigest.Telegram.MessageDelivery
+  alias HnTelegramDigest.Telegram.Subscriptions
   alias HnTelegramDigest.TelegramClientMock
   alias HnTelegramDigest.Workflows.DeliverHnDigest.SendTelegramDigest
 
@@ -13,6 +14,15 @@ defmodule HnTelegramDigest.Workflows.DeliverHnDigest.SendTelegramDigestTest do
   setup do
     telegram_config = Application.fetch_env!(:hn_telegram_digest, :telegram)
     delivery_agent = start_supervised!({Agent, fn -> [] end})
+
+    assert {:ok, %{status: "active"}} =
+             Subscriptions.apply_subscription_command(%{
+               action: "subscribe",
+               chat: %{
+                 id: 12_345,
+                 type: "private"
+               }
+             })
 
     Application.put_env(
       :hn_telegram_digest,
@@ -162,11 +172,36 @@ defmodule HnTelegramDigest.Workflows.DeliverHnDigest.SendTelegramDigestTest do
     refute Repo.get_by(MessageDelivery, idempotency_key: "workflow/run-5/send_digest")
   end
 
+  test "run skips delivery if the chat unsubscribed before the send step" do
+    digest = formatted_digest("run-6")
+
+    assert {:ok, %{status: "inactive"}} =
+             Subscriptions.apply_subscription_command(%{
+               action: "unsubscribe",
+               chat: %{
+                 id: 12_345,
+                 type: "private"
+               }
+             })
+
+    assert {:ok,
+            %{
+              status: "skipped",
+              reason: "inactive_subscription",
+              duplicate?: false,
+              chat_id: 12_345,
+              empty: false,
+              idempotency_key: "workflow/run-6/send_digest"
+            }} = SendTelegramDigest.run(%{digest: digest}, %{run_id: "run-6"})
+
+    refute Repo.get_by(MessageDelivery, idempotency_key: "workflow/run-6/send_digest")
+  end
+
   test "run rejects stale formatted idempotency metadata" do
-    digest = %{formatted_digest("run-6") | idempotency_key: "workflow/other-run/send_digest"}
+    digest = %{formatted_digest("run-7") | idempotency_key: "workflow/other-run/send_digest"}
 
     assert {:error, :digest_idempotency_key_mismatch} =
-             SendTelegramDigest.run(%{digest: digest}, %{run_id: "run-6"})
+             SendTelegramDigest.run(%{digest: digest}, %{run_id: "run-7"})
   end
 
   defp formatted_digest(run_id) do

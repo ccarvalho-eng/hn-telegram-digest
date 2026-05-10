@@ -1,20 +1,30 @@
-defmodule HnTelegramDigest.Telegram.SubscriptionCommand do
+defmodule HnTelegramDigest.Telegram.Command do
   @moduledoc false
 
   @type t :: %{
           required(:action) => String.t(),
           required(:chat) => map(),
-          required(:text) => String.t()
+          required(:text) => String.t(),
+          required(:update_id) => integer(),
+          optional(:command) => String.t()
         }
 
   @spec from_update(map()) :: {:ok, t()} | :ignore | {:error, atom()}
   def from_update(update) when is_map(update) do
-    with {:ok, message} <- fetch_map(update, :message),
+    with {:ok, update_id} <- fetch_integer(update, :update_id),
+         {:ok, message} <- fetch_map(update, :message),
          {:ok, text} <- fetch_binary(message, :text),
-         {:ok, action} <- command_action(text),
+         {:ok, command} <- command_action(text),
          {:ok, chat} <- fetch_map(message, :chat),
          {:ok, normalized_chat} <- normalize_chat(chat) do
-      {:ok, %{action: action, chat: normalized_chat, text: text}}
+      {:ok,
+       %{
+         action: command.action,
+         command: command.name,
+         chat: normalized_chat,
+         text: text,
+         update_id: update_id
+       }}
     else
       :ignore -> :ignore
       {:error, reason} -> {:error, reason}
@@ -33,19 +43,32 @@ defmodule HnTelegramDigest.Telegram.SubscriptionCommand do
     end
   end
 
-  defp normalize_command("/start" <> suffix) do
-    if command_suffix?(suffix), do: {:ok, "subscribe"}, else: :ignore
-  end
-
-  defp normalize_command("/stop" <> suffix) do
-    if command_suffix?(suffix), do: {:ok, "unsubscribe"}, else: :ignore
+  defp normalize_command("/" <> _command = command) do
+    with :ok <- validate_command_suffix(command) do
+      case command_name(command) do
+        "/start" -> {:ok, %{action: "subscribe", name: "/start"}}
+        "/stop" -> {:ok, %{action: "unsubscribe", name: "/stop"}}
+        "/digest" -> {:ok, %{action: "digest", name: "/digest"}}
+        name -> {:ok, %{action: "unsupported", name: name}}
+      end
+    end
   end
 
   defp normalize_command(_command), do: :ignore
 
-  defp command_suffix?(""), do: true
-  defp command_suffix?("@" <> bot_name), do: bot_name != ""
-  defp command_suffix?(_suffix), do: false
+  defp validate_command_suffix(command) do
+    case String.split(command, "@", parts: 2) do
+      [_name] -> :ok
+      [_name, bot_name] when bot_name != "" -> :ok
+      [_name, _bot_name] -> :ignore
+    end
+  end
+
+  defp command_name(command) do
+    command
+    |> String.split("@", parts: 2)
+    |> List.first()
+  end
 
   defp normalize_chat(chat) do
     with {:ok, chat_id} <- fetch_integer(chat, :id),
