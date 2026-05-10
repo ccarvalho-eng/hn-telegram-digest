@@ -183,6 +183,101 @@ runtime finding below.
 Automated tests keep API boundaries mocked or unexecuted; real Hacker News and
 Telegram calls are reserved for explicit smoke testing.
 
+## Operator Diagnostics
+
+Inspect a persisted Squid Mesh run from the app:
+
+```sh
+mix hn_telegram_digest.inspect_run RUN_ID
+```
+
+The task prints the workflow, trigger, status, current step, persisted payload,
+context, errors, steps, and step runs. Secret-like values are redacted before
+printing.
+
+Squid Mesh has an `explain_run/2` API in the repository, but it is not in the
+current Hex release used by this app. Until Squid Mesh publishes that API, this
+task reports the upstream release gap:
+
+```sh
+mix hn_telegram_digest.explain_run RUN_ID
+```
+
+See [Squid Mesh #148](https://github.com/ccarvalho-eng/squid_mesh/issues/148).
+
+## Restart Smoke
+
+This smoke path checks that a queued workflow run remains inspectable across a
+fresh BEAM process and that resuming work does not call Telegram when no bot
+token is configured. Step 4 can fetch the real Hacker News RSS feed; it should
+not call the real Telegram API without `TELEGRAM_BOT_TOKEN`.
+
+1. Reset the test database.
+
+   ```sh
+   MIX_ENV=test mix ecto.reset
+   ```
+
+2. Start a digest run and leave it queued.
+
+   ```sh
+   MIX_ENV=test mix run -e '
+   alias HnTelegramDigest.Telegram.Subscriptions
+   alias HnTelegramDigest.Workflows.DeliverHnDigest
+
+   {:ok, _subscription} =
+     Subscriptions.apply_subscription_command(%{
+       action: "subscribe",
+       chat: %{id: 12_345, type: "private"}
+     })
+
+   {:ok, run} =
+     SquidMesh.start_run(
+       DeliverHnDigest,
+       :digest_requested,
+       %{chat_id: 12_345, window_start_at: "2026-05-10T13:00:00Z"}
+     )
+
+   IO.puts("digest_run_id=#{run.id}")
+   '
+   ```
+
+3. In a new command, inspect the queued run using the printed id.
+
+   ```sh
+   MIX_ENV=test mix hn_telegram_digest.inspect_run DIGEST_RUN_ID
+   ```
+
+   Expected: the run is still present after the process restart and is either
+   `pending` or `running`, depending on whether any worker already picked it up.
+
+4. Resume queued work in a fresh process without configuring
+   `TELEGRAM_BOT_TOKEN`.
+
+   ```sh
+   MIX_ENV=test mix run -e '
+   result = Oban.drain_queue(queue: :squid_mesh, with_recursion: true)
+   IO.inspect(result, label: "drain")
+   '
+   ```
+
+   Expected: the workflow resumes from persisted Squid Mesh/Oban state. If it
+   reaches Telegram delivery, the host app records a failed
+   `telegram_message_deliveries` row with `missing_telegram_bot_token` instead
+   of sending a real Telegram message.
+
+5. Inspect the final run state and delivery rows.
+
+   ```sh
+   MIX_ENV=test mix hn_telegram_digest.inspect_run DIGEST_RUN_ID
+   psql -d hn_telegram_digest_test -c "select idempotency_key, status, last_error from telegram_message_deliveries;"
+   ```
+
+Verified on May 10, 2026: a queued digest run was inspected from a fresh BEAM
+process, `Oban.drain_queue/2` resumed four Squid Mesh steps, the run failed at
+`send_digest` with `missing_telegram_bot_token`, and the only Telegram delivery
+row was `failed` with `{"kind": "missing_telegram_bot_token"}`.
+
 ## Tests
 
 Run the test suite:
@@ -202,6 +297,8 @@ The workflow tests cover:
 - `/digest` starts a digest workflow for active subscriptions.
 - inactive `/digest` and unsupported commands send deterministic Telegram
   replies without starting workflow work.
+- operator diagnostics format `SquidMesh.inspect_run/2` output and fail clearly
+  while `SquidMesh.explain_run/2` is not in the published dependency.
 - duplicate command delivery is idempotent at the subscription row.
 - confirmation delivery is persisted and retry-safe by idempotency key.
 - non-command messages do not start workflow work.
@@ -236,6 +333,9 @@ The workflow tests cover:
   `:scheduled_digest` and `:manual_digest` triggers.
 - The digest send step re-checks the subscription before calling Telegram, so
   stale queued digest runs skip delivery after a chat unsubscribes.
+- `mix hn_telegram_digest.inspect_run RUN_ID` is the host app's operator
+  surface over `SquidMesh.inspect_run/2`. It formats and redacts data but does
+  not interpret runtime state itself.
 
 ## Squid Mesh Findings
 
@@ -260,3 +360,8 @@ The workflow tests cover:
   This app needed scheduled and manual entrypoints for the same digest workflow,
   so it uses one shared `:digest_requested` trigger and records the missing
   first-class multi-trigger support upstream.
+- [Squid Mesh #148](https://github.com/ccarvalho-eng/squid_mesh/issues/148):
+  `SquidMesh.explain_run/2` exists in the Squid Mesh repo but is not in the
+  current published Hex release. The host app exposes a placeholder
+  `mix hn_telegram_digest.explain_run RUN_ID` task that reports this release gap
+  instead of re-implementing explanation logic locally.
