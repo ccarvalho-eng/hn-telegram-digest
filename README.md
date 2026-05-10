@@ -15,12 +15,13 @@ workflow in dev:
 - Format deduplicated Hacker News items into deterministic Telegram text.
 - Persist received Telegram updates.
 - Start a Squid Mesh workflow for `/start` and `/stop`.
+- Start a Squid Mesh cron workflow that fans out digest workflow runs for
+  active subscriptions.
 - Persist Telegram chats and subscription status.
 - Send and record Telegram confirmation messages.
 
-Digest generation and scheduled delivery are later slices. For now, verify
-Telegram integration by sending `/start` or `/stop` to the bot, checking that
-Telegram receives the confirmation reply, and checking the database rows
+Verify Telegram integration by sending `/start` or `/stop` to the bot, checking
+that Telegram receives the confirmation reply, and checking the database rows
 described below.
 
 ## Test With Your Own Telegram Bot
@@ -143,6 +144,28 @@ Follow these steps to run the app locally against a real Telegram bot you own.
     Rerun the subscription query. The row should move to `inactive` and set
     `unsubscribed_at`.
 
+## Trigger The Schedule Locally
+
+The daily schedule is declared as a Squid Mesh cron trigger in
+`HnTelegramDigest.Workflows.ScheduleHnDigests` and activated through
+`SquidMesh.Plugins.Cron` in dev/prod Oban config.
+
+To trigger the schedule without waiting for the cron minute, start a scheduler
+workflow manually:
+
+```sh
+iex -S mix
+```
+
+```elixir
+SquidMesh.start_run(HnTelegramDigest.Workflows.ScheduleHnDigests, :daily_digest_schedule, %{})
+```
+
+That scheduler workflow queries active subscriptions and starts one
+`HnTelegramDigest.Workflows.DeliverHnDigest` run per active chat. Automated
+tests keep API boundaries mocked or unexecuted; real Hacker News and Telegram
+calls are reserved for explicit smoke testing.
+
 ## Tests
 
 Run the test suite:
@@ -183,3 +206,26 @@ The workflow tests cover:
   are recorded for retry. Stale in-flight sends move to `unknown` for operator
   inspection instead of retrying automatically, because Telegram may already
   have accepted the message.
+- Scheduled digest fanout intentionally stays thin in the host app: it queries
+  active subscriptions and starts digest workflow runs through Squid Mesh.
+  Duplicate scheduled-start semantics are left to Squid Mesh and tracked as a
+  runtime finding below.
+
+## Squid Mesh Findings
+
+- [Squid Mesh #144](https://github.com/ccarvalho-eng/squid_mesh/issues/144):
+  Squid Mesh installs several separate migrations for its run, step, attempt,
+  trigger, and manual/resume schema. For host apps, one cohesive generated
+  migration, or fewer clearly grouped migrations, would be easier to review and
+  apply.
+- [Squid Mesh #146](https://github.com/ccarvalho-eng/squid_mesh/issues/146):
+  Squid Mesh cron triggers do not expose the intended schedule window to the
+  workflow payload. This app currently derives the window inside the scheduler
+  step, which is enough for dogfooding but weakens duplicate-window semantics
+  after delayed cron execution.
+- [Squid Mesh #145](https://github.com/ccarvalho-eng/squid_mesh/issues/145):
+  Squid Mesh does not provide a built-in idempotency key for cron-started runs.
+  The host app currently avoids adding its own scheduled-run table so this gap
+  stays visible: duplicate cron delivery can create duplicate digest workflow
+  runs, even though downstream domain deduplication still protects story
+  delivery.

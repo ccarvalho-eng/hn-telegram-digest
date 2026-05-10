@@ -20,6 +20,8 @@ if config_env() == :prod do
 
   config :hn_telegram_digest, Oban,
     repo: HnTelegramDigest.Repo,
-    plugins: [],
+    plugins: [
+      {SquidMesh.Plugins.Cron, workflows: [HnTelegramDigest.Workflows.ScheduleHnDigests]}
+    ],
     queues: [default: 10, squid_mesh: 5]
 end
