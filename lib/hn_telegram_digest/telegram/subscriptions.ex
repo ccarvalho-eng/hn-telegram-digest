@@ -1,11 +1,23 @@
 defmodule HnTelegramDigest.Telegram.Subscriptions do
-  @moduledoc false
+  @moduledoc """
+  Coordinates Telegram chat subscription persistence and reads.
+  """
+
+  import Ecto.Query
 
   alias HnTelegramDigest.Repo
   alias HnTelegramDigest.Telegram.Chat
   alias HnTelegramDigest.Telegram.Subscription
 
-  @spec apply_subscription_command(map(), module()) :: {:ok, map()} | {:error, term()}
+  @type subscription_result :: %{
+          required(:chat_id) => integer(),
+          required(:status) => String.t(),
+          required(:action) => String.t(),
+          required(:confirmation_text) => String.t()
+        }
+
+  @spec apply_subscription_command(map(), module()) ::
+          {:ok, subscription_result()} | {:error, term()}
   def apply_subscription_command(command, repo \\ Repo) when is_map(command) do
     with {:ok, action} <- fetch_action(command),
          {:ok, chat} <- fetch_chat(command) do
@@ -25,6 +37,18 @@ defmodule HnTelegramDigest.Telegram.Subscriptions do
         }
       end)
     end
+  end
+
+  @doc """
+  Lists Telegram chat ids with active subscriptions.
+  """
+  @spec list_active_chat_ids(module()) :: [integer()]
+  def list_active_chat_ids(repo \\ Repo) do
+    Subscription
+    |> where([subscription], subscription.status == "active")
+    |> order_by([subscription], asc: subscription.chat_id)
+    |> select([subscription], subscription.chat_id)
+    |> repo.all()
   end
 
   defp fetch_action(command) do

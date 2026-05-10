@@ -3,6 +3,10 @@ import Config
 config :hn_telegram_digest,
   ecto_repos: [HnTelegramDigest.Repo]
 
+config :hn_telegram_digest, :digest_schedule,
+  cron_expression: "0 13 * * *",
+  timezone: "Etc/UTC"
+
 config :hn_telegram_digest, :hacker_news,
   client: HnTelegramDigest.HackerNews.Client,
   feed_url: "https://news.ycombinator.com/rss",
