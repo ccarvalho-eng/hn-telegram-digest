@@ -29,7 +29,7 @@ defmodule HnTelegramDigest.MixProject do
       {:oban, "~> 2.21"},
       {:postgrex, "~> 0.20"},
       {:req, "~> 0.5"},
-      {:squid_mesh, "~> 0.1.0-alpha.3"}
+      {:squid_mesh, "~> 0.1.0-alpha.4"}
     ]
   end
 

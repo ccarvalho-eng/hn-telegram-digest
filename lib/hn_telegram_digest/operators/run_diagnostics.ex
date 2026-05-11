@@ -4,7 +4,6 @@ defmodule HnTelegramDigest.Operators.RunDiagnostics do
   """
 
   @secret_fragments ~w(authorization password secret token api_key access_key)
-  @explain_unavailable_message "SquidMesh.explain_run/2 is not available in the current Hex release. See https://github.com/ccarvalho-eng/squid_mesh/issues/148"
 
   @type diagnostic_result :: {:ok, String.t()} | {:error, String.t()}
 
@@ -13,13 +12,11 @@ defmodule HnTelegramDigest.Operators.RunDiagnostics do
   """
   @spec inspect_run(Ecto.UUID.t(), keyword()) :: diagnostic_result()
   def inspect_run(run_id, opts \\ []) do
-    with {:ok, run_id} <- validate_run_id(run_id) do
-      opts = Keyword.put_new(opts, :include_history, true)
+    opts = Keyword.put_new(opts, :include_history, true)
 
-      case SquidMesh.inspect_run(run_id, opts) do
-        {:ok, run} -> {:ok, format_run(run)}
-        {:error, reason} -> {:error, format_error(run_id, reason)}
-      end
+    case SquidMesh.inspect_run(run_id, opts) do
+      {:ok, run} -> {:ok, format_run(run)}
+      {:error, reason} -> {:error, format_error(run_id, reason)}
     end
   end
 
@@ -28,15 +25,9 @@ defmodule HnTelegramDigest.Operators.RunDiagnostics do
   """
   @spec explain_run(Ecto.UUID.t(), keyword()) :: diagnostic_result()
   def explain_run(run_id, opts \\ []) do
-    with {:ok, run_id} <- validate_run_id(run_id) do
-      if function_exported?(SquidMesh, :explain_run, 2) do
-        case apply(SquidMesh, :explain_run, [run_id, opts]) do
-          {:ok, explanation} -> {:ok, format_explanation(run_id, explanation)}
-          {:error, reason} -> {:error, format_error(run_id, reason)}
-        end
-      else
-        {:error, @explain_unavailable_message}
-      end
+    case SquidMesh.explain_run(run_id, opts) do
+      {:ok, explanation} -> {:ok, format_explanation(run_id, explanation)}
+      {:error, reason} -> {:error, format_error(run_id, reason)}
     end
   end
 
@@ -88,13 +79,7 @@ defmodule HnTelegramDigest.Operators.RunDiagnostics do
   @spec format_error(term()) :: String.t()
   def format_error(reason), do: "Run diagnostics failed: #{encode(reason)}"
 
-  defp validate_run_id(run_id) do
-    case Ecto.UUID.cast(run_id) do
-      {:ok, run_id} -> {:ok, run_id}
-      :error -> {:error, "Invalid run id: #{run_id}"}
-    end
-  end
-
+  defp format_error(run_id, :invalid_run_id), do: "Invalid run id: #{run_id}"
   defp format_error(run_id, :not_found), do: "Run not found: #{run_id}"
   defp format_error(_run_id, reason), do: format_error(reason)
 

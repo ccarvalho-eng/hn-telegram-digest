@@ -57,7 +57,7 @@ defmodule HnTelegramDigest.Digests.Scheduler do
 
   def start_scheduled_digest(chat_id, window_start_at, repo) when is_integer(chat_id) do
     with {:ok, window} <- normalize_window_start_at(window_start_at) do
-      start_digest_for_active_subscription(repo, chat_id, window)
+      start_digest_for_active_subscription(repo, :scheduled_digest, chat_id, window)
     end
   end
 
@@ -74,7 +74,7 @@ defmodule HnTelegramDigest.Digests.Scheduler do
 
   def start_manual_digest(chat_id, requested_at, repo) when is_integer(chat_id) do
     with {:ok, window} <- normalize_window_start_at(requested_at) do
-      start_digest_for_active_subscription(repo, chat_id, window)
+      start_digest_for_active_subscription(repo, :manual_digest, chat_id, window)
     end
   end
 
@@ -112,12 +112,12 @@ defmodule HnTelegramDigest.Digests.Scheduler do
     |> repo.exists?()
   end
 
-  defp start_digest_for_active_subscription(repo, chat_id, window) do
+  defp start_digest_for_active_subscription(repo, trigger, chat_id, window) do
     window_iso = DateTime.to_iso8601(window)
 
     repo.transaction(fn ->
       with true <- active_subscription_locked?(repo, chat_id) || {:skip, :inactive_subscription},
-           {:ok, result} <- start_digest_run(repo, chat_id, window_iso) do
+           {:ok, result} <- start_digest_run(repo, trigger, chat_id, window_iso) do
         result
       else
         {:skip, :inactive_subscription} ->
@@ -129,11 +129,11 @@ defmodule HnTelegramDigest.Digests.Scheduler do
     end)
   end
 
-  defp start_digest_run(repo, chat_id, window_iso) do
+  defp start_digest_run(repo, trigger, chat_id, window_iso) do
     payload = %{chat_id: chat_id, window_start_at: window_iso}
 
     with {:ok, run} <-
-           SquidMesh.start_run(DeliverHnDigest, :digest_requested, payload, repo: repo) do
+           SquidMesh.start_run(DeliverHnDigest, trigger, payload, repo: repo) do
       {:ok,
        %{
          status: "started",

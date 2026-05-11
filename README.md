@@ -175,10 +175,9 @@ SquidMesh.start_run(HnTelegramDigest.Workflows.ScheduleHnDigests, :daily_digest_
 
 That scheduler workflow queries active subscriptions and starts one
 `HnTelegramDigest.Workflows.DeliverHnDigest` run per active chat. The same
-digest workflow is used for manual `/digest` requests. Squid Mesh currently
-allows only one trigger per workflow, so the host app uses one shared
-`:digest_requested` trigger and tracks the missing multi-trigger support as a
-runtime finding below.
+digest workflow is used for manual `/digest` requests. Squid Mesh supports
+separate triggers for those entrypoints, so scheduled starts use
+`:scheduled_digest` and Telegram command starts use `:manual_digest`.
 
 Automated tests keep API boundaries mocked or unexecuted; real Hacker News and
 Telegram calls are reserved for explicit smoke testing.
@@ -195,15 +194,12 @@ The task prints the workflow, trigger, status, current step, persisted payload,
 context, errors, steps, and step runs. Secret-like values are redacted before
 printing.
 
-Squid Mesh has an `explain_run/2` API in the repository, but it is not in the
-current Hex release used by this app. Until Squid Mesh publishes that API, this
-task reports the upstream release gap:
-
 ```sh
 mix hn_telegram_digest.explain_run RUN_ID
 ```
 
-See [Squid Mesh #148](https://github.com/ccarvalho-eng/squid_mesh/issues/148).
+The task prints Squid Mesh's structured explanation for the current run state,
+including the reason, valid next actions, details, and evidence.
 
 ## Restart Smoke
 
@@ -234,7 +230,7 @@ not call the real Telegram API without `TELEGRAM_BOT_TOKEN`.
    {:ok, run} =
      SquidMesh.start_run(
        DeliverHnDigest,
-       :digest_requested,
+       :manual_digest,
        %{chat_id: 12_345, window_start_at: "2026-05-10T13:00:00Z"}
      )
 
@@ -297,8 +293,8 @@ The workflow tests cover:
 - `/digest` starts a digest workflow for active subscriptions.
 - inactive `/digest` and unsupported commands send deterministic Telegram
   replies without starting workflow work.
-- operator diagnostics format `SquidMesh.inspect_run/2` output and fail clearly
-  while `SquidMesh.explain_run/2` is not in the published dependency.
+- operator diagnostics format `SquidMesh.inspect_run/2` and
+  `SquidMesh.explain_run/2` output.
 - duplicate command delivery is idempotent at the subscription row.
 - confirmation delivery is persisted and retry-safe by idempotency key.
 - non-command messages do not start workflow work.
@@ -328,9 +324,8 @@ The workflow tests cover:
   Dynamic parent/child run modeling and duplicate scheduled-start semantics are
   left to Squid Mesh and tracked as runtime findings below.
 - Manual `/digest` requests reuse the same digest workflow as scheduled fanout.
-  Because Squid Mesh currently supports exactly one trigger per workflow, both
-  entrypoints share the `:digest_requested` trigger instead of modeling separate
-  `:scheduled_digest` and `:manual_digest` triggers.
+  Squid Mesh persists separate `:scheduled_digest` and `:manual_digest` trigger
+  names for operator inspection.
 - The digest send step re-checks the subscription before calling Telegram, so
   stale queued digest runs skip delivery after a chat unsubscribes.
 - `mix hn_telegram_digest.inspect_run RUN_ID` is the host app's operator
@@ -339,11 +334,26 @@ The workflow tests cover:
 
 ## Squid Mesh Findings
 
+Resolved in `squid_mesh` `0.1.0-alpha.4` and now exercised by this app:
+
 - [Squid Mesh #144](https://github.com/ccarvalho-eng/squid_mesh/issues/144):
-  Squid Mesh installs several separate migrations for its run, step, attempt,
-  trigger, and manual/resume schema. For host apps, one cohesive generated
-  migration, or fewer clearly grouped migrations, would be easier to review and
-  apply.
+  Squid Mesh now installs one current-schema migration for fresh host apps. This
+  app uses one Squid Mesh schema migration instead of the historical split alpha
+  migration set.
+- [Squid Mesh #147](https://github.com/ccarvalho-eng/squid_mesh/issues/147):
+  Squid Mesh now supports multiple triggers per workflow. This app models
+  scheduled digest fanout and manual `/digest` requests as separate triggers on
+  the same `DeliverHnDigest` workflow.
+- [Squid Mesh #148](https://github.com/ccarvalho-eng/squid_mesh/issues/148):
+  `SquidMesh.explain_run/2` is now published. The host
+  `mix hn_telegram_digest.explain_run RUN_ID` task calls it directly.
+- [Squid Mesh #149](https://github.com/ccarvalho-eng/squid_mesh/issues/149):
+  Public run-id APIs now return structured `:invalid_run_id` errors for
+  malformed IDs. The host operator tasks format those Squid Mesh errors instead
+  of guarding the library call with host-side validation.
+
+Still open upstream:
+
 - [Squid Mesh #141](https://github.com/ccarvalho-eng/squid_mesh/issues/141):
   Scheduled digest fanout has a runtime-sized graph: one digest run per active
   subscription. This app keeps subscription lookup in host code, but child run
@@ -360,21 +370,6 @@ The workflow tests cover:
   stays visible: duplicate cron delivery can create duplicate digest workflow
   runs, even though downstream domain deduplication still protects story
   delivery.
-- [Squid Mesh #147](https://github.com/ccarvalho-eng/squid_mesh/issues/147):
-  Squid Mesh currently validates that each workflow has exactly one trigger.
-  This app needed scheduled and manual entrypoints for the same digest workflow,
-  so it uses one shared `:digest_requested` trigger and records the missing
-  first-class multi-trigger support upstream.
-- [Squid Mesh #148](https://github.com/ccarvalho-eng/squid_mesh/issues/148):
-  `SquidMesh.explain_run/2` exists in the Squid Mesh repo but is not in the
-  current published Hex release. The host app exposes a placeholder
-  `mix hn_telegram_digest.explain_run RUN_ID` task that reports this release gap
-  instead of re-implementing explanation logic locally.
-- [Squid Mesh #149](https://github.com/ccarvalho-eng/squid_mesh/issues/149):
-  Public run-id APIs should return structured errors for malformed IDs instead
-  of leaking Ecto cast exceptions. This app validates CLI `RUN_ID` input at the
-  host boundary, but Squid Mesh should still harden `inspect_run/2`,
-  `explain_run/2`, and lifecycle APIs that accept persisted run IDs.
 
 Reviewed as host-owned, not Squid Mesh issues:
 

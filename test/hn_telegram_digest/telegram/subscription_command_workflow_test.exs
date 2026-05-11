@@ -189,7 +189,7 @@ defmodule HnTelegramDigest.Telegram.SubscriptionCommandWorkflowTest do
     assert :ok = CommandUpdateHandler.handle_update(update)
 
     assert {:ok, [run]} = SquidMesh.list_runs([workflow: DeliverHnDigest], repo: Repo)
-    assert :digest_requested = run.trigger
+    assert :manual_digest = run.trigger
     assert %{chat_id: 12_345, window_start_at: window_start_at} = run.payload
     assert {:ok, _datetime, 0} = DateTime.from_iso8601(window_start_at)
   end
