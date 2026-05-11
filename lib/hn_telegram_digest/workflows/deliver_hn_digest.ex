@@ -11,7 +11,16 @@ defmodule HnTelegramDigest.Workflows.DeliverHnDigest do
   alias HnTelegramDigest.Workflows.DeliverHnDigest.SendTelegramDigest
 
   workflow do
-    trigger :digest_requested do
+    trigger :manual_digest do
+      manual()
+
+      payload do
+        field(:chat_id, :integer)
+        field(:window_start_at, :string)
+      end
+    end
+
+    trigger :scheduled_digest do
       manual()
 
       payload do

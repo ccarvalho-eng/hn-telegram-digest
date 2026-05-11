@@ -19,7 +19,7 @@ defmodule HnTelegramDigest.Operators.RunDiagnosticsTest do
     assert {:ok, run} =
              SquidMesh.start_run(
                DeliverHnDigest,
-               :digest_requested,
+               :manual_digest,
                %{chat_id: 12_345, window_start_at: @window_start_at},
                repo: Repo
              )
@@ -28,7 +28,7 @@ defmodule HnTelegramDigest.Operators.RunDiagnosticsTest do
 
     assert output =~ "Run #{run.id}"
     assert output =~ "workflow: HnTelegramDigest.Workflows.DeliverHnDigest"
-    assert output =~ "trigger: digest_requested"
+    assert output =~ "trigger: manual_digest"
     assert output =~ "status: pending"
     assert output =~ ~s("chat_id":12345)
     assert output =~ ~s("window_start_at":"#{@window_start_at}")
@@ -40,12 +40,21 @@ defmodule HnTelegramDigest.Operators.RunDiagnosticsTest do
     assert {:error, "Invalid run id: not-a-uuid"} = RunDiagnostics.explain_run("not-a-uuid")
   end
 
-  test "explain_run reports the currently unpublished Squid Mesh API" do
-    run_id = Ecto.UUID.generate()
+  test "explain_run returns formatted Squid Mesh diagnostics" do
+    assert {:ok, run} =
+             SquidMesh.start_run(
+               DeliverHnDigest,
+               :manual_digest,
+               %{chat_id: 12_345, window_start_at: @window_start_at},
+               repo: Repo
+             )
 
-    assert {:error,
-            "SquidMesh.explain_run/2 is not available in the current Hex release. See https://github.com/ccarvalho-eng/squid_mesh/issues/148"} =
-             RunDiagnostics.explain_run(run_id)
+    assert {:ok, output} = RunDiagnostics.explain_run(run.id)
+
+    assert output =~ "Run explanation #{run.id}"
+    assert output =~ "status: pending"
+    assert output =~ "reason:"
+    assert output =~ "next_actions:"
   end
 
   test "diagnostics return clear errors for missing runs" do
@@ -60,7 +69,7 @@ defmodule HnTelegramDigest.Operators.RunDiagnosticsTest do
       RunDiagnostics.format_run(%SquidMesh.Run{
         id: Ecto.UUID.generate(),
         workflow: DeliverHnDigest,
-        trigger: :digest_requested,
+        trigger: :manual_digest,
         status: :pending,
         payload: %{
           "bot_token" => "123:abc",
@@ -117,7 +126,7 @@ defmodule HnTelegramDigest.Operators.RunDiagnosticsTest do
     assert {:ok, run} =
              SquidMesh.start_run(
                DeliverHnDigest,
-               :digest_requested,
+               :manual_digest,
                %{chat_id: 12_345, window_start_at: @window_start_at},
                repo: Repo
              )
@@ -131,13 +140,21 @@ defmodule HnTelegramDigest.Operators.RunDiagnosticsTest do
     assert output =~ "status: pending"
   end
 
-  test "explain task exits with a clear unpublished API error" do
-    run_id = Ecto.UUID.generate()
+  test "explain task prints formatted Squid Mesh diagnostics" do
+    assert {:ok, run} =
+             SquidMesh.start_run(
+               DeliverHnDigest,
+               :manual_digest,
+               %{chat_id: 12_345, window_start_at: @window_start_at},
+               repo: Repo
+             )
 
-    assert_raise Mix.Error,
-                 "SquidMesh.explain_run/2 is not available in the current Hex release. See https://github.com/ccarvalho-eng/squid_mesh/issues/148",
-                 fn ->
-                   Mix.Tasks.HnTelegramDigest.ExplainRun.run([run_id])
-                 end
+    output =
+      capture_io(fn ->
+        Mix.Tasks.HnTelegramDigest.ExplainRun.run([run.id])
+      end)
+
+    assert output =~ "Run explanation #{run.id}"
+    assert output =~ "status: pending"
   end
 end
